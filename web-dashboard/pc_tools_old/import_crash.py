@@ -27,4 +27,4 @@ print(f"📊 Type: {crash_data.get('type', 'N/A')}")
 print(f"📁 Fichier: {crash_data.get('file', 'N/A')}")
 print(f"🔢 Ligne: {crash_data.get('line', 'N/A')}")
 print(f"🚨 Sévérité: {crash_data.get('analysis', {}).get('severity', 'N/A')}")
-# FIX 4: removed stray 'EOF' that was left at the bottom from shell heredoc usage
+EOF

@@ -1,0 +1,12 @@
+Severity veut dire sévérité ou niveau de gravité.
+Dans un contexte de crashs, bugs ou incidents :
+
+    CRITICAL → problème très grave, qui bloque totalement le système ou l’application.
+
+    HIGH → problème sérieux, impact fort mais pas forcément bloquant.
+
+    MEDIUM → problème modéré, impact limité ou contournable.
+
+    LOW → problème mineur, souvent cosmétique ou sans impact majeur.
+
+

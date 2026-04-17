@@ -1,0 +1,13 @@
+3 fichiers créés, lu un fichier3 fichiers créés, lu un fichierHere's a summary of all 4 bugs found and fixed (database.py was clean):
+analyzer.py — 2 bugs
+
+Bug 1 (runtime crash): datetime was used inside generate_report() to call datetime.now().isoformat(), but it was never imported. This would raise a NameError every time a report was generated. Fixed by adding from datetime import datetime at the top.
+Bug 2 (logic error): most_common_function was declared in the patterns dict but the loop that processes crashes never populated it, so it would always be an empty {} in the report. Removed the key to avoid misleading empty output — it can be re-added with a proper fill loop if function-level analysis is needed.
+
+decoder.py — 1 bug
+
+Bug 3 (runtime crash): decode_stack() has List[Dict] as its return type annotation, but Dict was missing from the typing import. This causes a NameError at import time (Python evaluates annotations). Fixed by adding Dict to the import line.
+
+import_crash.py — 1 artifact
+
+Bug 4 (syntax error): A stray EOF token sat at the very end of the file — a leftover from shell heredoc usage (cat << EOF ... EOF). Python would raise a SyntaxError on it. Removed.

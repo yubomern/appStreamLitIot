@@ -1,0 +1,234 @@
+@startuml CoreDump_Complete_Sequence_Diagram
+title Diagramme de Séquence Complet - Système CoreDump PFE
+footer ACTIA Aeronautics Services - Projet PFE 2024
+
+skinparam backgroundColor #FFFFFF
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 10
+skinparam participantStyle rectangle
+skinparam legendPosition right
+
+' === Participants Principaux ===
+participant "Développeur" as Dev #LightBlue
+participant "Terminal" as Shell #LightYellow
+participant "CMake" as CMake #LightGreen
+participant "Make" as Make #Orange
+participant "CoreDumpApp\n(C++)" as App #Pink
+participant "SignalHandler" as Handler #Red
+participant "CoreDumpManager" as Manager #Purple
+participant "SystemMetrics" as Metrics #Teal
+participant "Fichiers /tmp/" as Files #LightGray
+participant "Python: import_crash.py" as Import #LightCyan
+participant "SQLite: crash_dumps.db" as DB #Lavender
+participant "Python: analyzer.py" as Analyzer #Thistle
+participant "Streamlit: app.py" as Dashboard #PeachPuff
+participant "Navigateur Web" as Browser #LightSalmon
+
+' === Groupe 1: Compilation ===
+group Phase 1: Configuration et Compilation #F0F8FF
+    Dev -> Shell : cd embedded && mkdir -p build && cd build
+    Shell -> Shell : Dossier build créé
+    
+    Dev -> Shell : cmake .. -DCMAKE_BUILD_TYPE=Debug
+    activate CMake
+    CMake -> CMake : Lit CMakeLists.txt
+    CMake -> CMake : Détecte plateforme (Linux/Windows)
+    CMake -> CMake : Configure options:\n-Wall -Wextra -g -O0 -rdynamic
+    CMake -> Shell : Génère Makefile + CMakeFiles/
+    deactivate CMake
+    
+    Dev -> Shell : make -j$(nproc)
+    activate Make
+    Make -> Make : Compile main.cpp → main.cpp.o
+    Make -> Make : Compile CoreDump.cpp → CoreDump.cpp.o
+    Make -> Make : Compile SystemMetrics.cpp → .o
+    Make -> Make : Compile test_crash.cpp → .o
+    Make -> Make : Linking: tous les .o → CoreDumpApp
+    Make -> Shell : ✅ [100%] Built target CoreDumpApp
+    deactivate Make
+    
+    Dev -> Shell : ls -la CoreDumpApp
+    Shell --> Dev : -rwxr-xr-x ... CoreDumpApp
+end
+
+' === Groupe 2: Exécution et Crash ===
+group Phase 2: Exécution et Détection de Crash #FFF0F5
+    Dev -> Shell : ./CoreDumpApp --test
+    activate App
+    
+    App -> App : Installation des signal handlers:\nSIGSEGV(11), SIGABRT(6), SIGFPE(8)
+    
+    App -> App : HandlePreviousCrash()
+    App -> Manager : Instance().Get()
+    activate Manager
+    Manager -> Manager : IsSaved() → vérifie key, is_valid
+    Manager --> App : nullptr (pas de crash précédent)
+    deactivate Manager
+    
+    alt Mode test activé (--test)
+        App -> Shell : Affiche "TEST MODE: intentional crash in 2s..."
+        App -> App : PlatformSleepMs(2000)
+        App -> App : TriggerTestCrash()
+        activate App
+        App -> App : Call1() → Call2() → Call3()
+        App -> App : raise(SIGABRT) 🚨
+    else Mode normal
+        App -> Shell : Affiche "Application running normally..."
+        App -> App : while(true) { PlatformSleepMs(1000); }
+    end
+    deactivate App
+end
+
+' === Groupe 3: Capture du Crash ===
+group Phase 3: Gestion du Signal et Capture #F0FFF0
+    Handler <- App : Signal SIGABRT (6) reçu
+    activate Handler
+    
+    Handler -> Handler : switch(signum) → type = AbortSignal
+    
+    Handler -> Manager : Instance().Store(nullptr, __FILE__, __LINE__, signum, type)
+    activate Manager
+    
+    Manager -> Manager : if (IsSaved()) return\n(vérifie premier crash)
+    Manager -> Manager : data_.software_version = 1
+    Manager -> Manager : data_.type = AbortSignal
+    Manager -> Manager : data_.timestamp = time(nullptr)
+    Manager -> Manager : FormatTimestamp() → "2024-03-25 10:30:45"
+    Manager -> Manager : strncpy(file_name, "test_crash.cpp")
+    Manager -> Manager : data_.line_number = 38
+    Manager -> Manager : PlatformGetPid() → process_id
+    Manager -> Manager : PlatformGetTid() → thread_id
+    
+    Manager -> Metrics : CaptureSystemMetrics()
+    activate Metrics
+    Metrics -> Metrics : Lire /proc/stat → CPU usage
+    Metrics -> Metrics : Lire /proc/meminfo → mémoire
+    Metrics -> Metrics : Lire /proc/self/status → threads
+    Metrics --> Manager : metrics remplis
+    deactivate Metrics
+    
+    Manager -> Manager : PlatformBacktrace() → call_stack[]
+    Manager -> Manager : Analyze()
+    note right of Manager
+      <b>Analyse automatique:</b>
+      - probable_cause: "Abort Signal..."
+      - severity: "HIGH"
+      - confidence_score: 75
+    end note
+    
+    Manager -> Manager : data_.key = 0xDEADBEEF
+    Manager -> Manager : data_.not_key = ~0xDEADBEEF
+    Manager -> Manager : data_.is_valid = true ✅
+    deactivate Manager
+    
+    Handler -> Manager : Instance().ExportTo(JSON, "/tmp/crash_dump.json")
+    activate Manager
+    Manager -> Manager : CrashExporterFactory::Create(JSON)
+    Manager -> Manager : JsonCrashExporter::Export()
+    Manager -> Files : fopen("/tmp/crash_dump.json", "w")
+    Files --> Manager : FILE* ouvert
+    Manager -> Files : fprintf() pour chaque champ JSON
+    Manager -> Files : fclose()
+    deactivate Manager
+    
+    Handler -> Manager : Instance().ExportTo(CSV, "/tmp/crash_dump.csv")
+    activate Manager
+    Manager -> Manager : CsvCrashExporter::Export()
+    Manager -> Files : Écrit fichier CSV
+    deactivate Manager
+    
+    Handler -> Shell : std::cerr << "[CoreDump] Signal 6 captured"
+    Handler -> Handler : exit(1)
+    deactivate Handler
+    deactivate App
+end
+
+' === Groupe 4: Import Python ===
+group Phase 4: Import dans Base de Données #FFFACD
+    Dev -> Shell : cd ../../pc_tools
+    Dev -> Shell : python3 import_crash.py
+    activate Import
+    
+    Import -> Files : Ouvrir /tmp/crash_dump.json
+    Files --> Import : Données JSON parsées
+    
+    Import -> Import : CrashDatabase(db_path)
+    activate DB
+    DB -> DB : init_database()
+    DB -> DB : CREATE TABLE IF NOT EXISTS crashes
+    DB -> DB : CREATE TABLE IF NOT EXISTS call_stack
+    DB -> DB : CREATE INDEX idx_timestamp, idx_severity
+    DB --> Import : Tables prêtes
+    deactivate DB
+    
+    Import -> DB : add_crash(crash_data)
+    activate DB
+    DB -> DB : INSERT INTO crashes (...)\nVALUES (timestamp, type, file, line...)
+    DB -> DB : crash_id = lastrowid → 1
+    DB -> DB : INSERT INTO call_stack\npour chaque adresse
+    DB --> Import : ✅ crash_id = 1
+    deactivate DB
+    
+    Import -> Shell : Affiche "✅ Crash importé avec succès ! ID: 1"
+    Import -> Shell : Affiche "📊 Type: 3, 📁 Fichier: test_crash.cpp"
+    deactivate Import
+end
+
+
+
+' === Groupe 5: Dashboard Web ===
+group Phase 5: Visualisation Streamlit #E6E6FA
+    Dev -> Shell : cd ../web-dashboard
+    Dev -> Shell : streamlit run app.py
+    activate Dashboard
+    
+    Dashboard -> Dashboard : st.set_page_config()
+    Dashboard -> Dashboard : st.title("🚨 CoreDump Dashboard")
+    
+    Dashboard -> DB : get_database() → CrashDatabase()
+    activate DB
+    DB --> Dashboard : Connexion à crash_dumps.db
+    deactivate DB
+    
+    Dashboard -> DB : get_all_crashes()
+    activate DB
+    DB -> DB : SELECT * FROM crashes
+    DB --> Dashboard : DataFrame pandas
+    deactivate DB
+    
+    Dashboard -> Dashboard : st.sidebar.multiselect()\n→ Filtre par sévérité
+    Dashboard -> Dashboard : st.metric() → Total, Critical, Last
+    Dashboard -> Dashboard : st.dataframe() → tableau filtrable
+    Dashboard -> Dashboard : st.download_button() → export CSV
+    
+    Dashboard -> Browser : 🌐 http://localhost:8501
+    Browser -> Dashboard : GET /
+    Dashboard -> Browser : Affiche interface web HTML/CSS/JS
+    Browser --> Dev : Dashboard visible
+    
+    Dev -> Browser : Interagit (filtres, export)
+    Browser -> Dashboard : Requête AJAX
+    Dashboard -> Browser : Données mises à jour
+    deactivate Dashboard
+end
+
+' === Légende ===
+legend right
+  |===|
+  | <b>Couleurs des participants:</b> |
+  | 🔵 Développeur: Actions utilisateur |
+  | 🟡 Shell/Terminal: Commandes |
+  | 🟢 CMake: Configuration |
+  | 🟠 Make: Compilation |
+  | 🩷 C++ App: Programme embarqué |
+  | 🔴 SignalHandler: Gestion crash |
+  | 🟣 Manager: Logique métier |
+  | ⚪ Fichiers: Stockage temporaire |
+  | 🩵 Python: Scripts d'analyse |
+  | 🟣 SQLite DB: Persistance |
+  | 🟪 Analyzer: Rapport automatique |
+  | 🍑 Dashboard: Visualisation web |
+  |===|
+endlegend
+
+@enduml

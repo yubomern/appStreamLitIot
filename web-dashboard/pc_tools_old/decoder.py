@@ -5,7 +5,7 @@ Decode addresses using addr2line
 
 import subprocess
 import re
-from typing import Dict, List, Tuple, Optional  # FIX 3: added Dict (was missing, used in decode_stack return type)
+from typing import List, Tuple, Optional
 
 class AddressDecoder:
     def __init__(self, executable_path: str):

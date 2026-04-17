@@ -4,7 +4,6 @@ Automatic crash cause analysis
 """
 
 import json
-from datetime import datetime  # FIX 1: was missing, used in generate_report()
 from typing import Dict, List
 from database import CrashDatabase
 from decoder import AddressDecoder
@@ -25,9 +24,7 @@ class CrashAnalyzer:
         #Initialization of structures
         patterns = {
             'most_common_file': {},
-            # FIX 2: removed 'most_common_function' key — it was declared but never
-            # populated in the loop, causing it to always be an empty dict in the report.
-            # Re-add it (with a fill loop) if function-level analysis is needed later.
+            'most_common_function': {},
             'severity_distribution': {},
             'time_patterns': {},
             'memory_correlation': []
